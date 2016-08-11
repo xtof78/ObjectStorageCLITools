@@ -95,6 +95,30 @@ if ( command === "listcontainers" )
 
 			// console.log( r );
 	    });;
+} else if ( command === "upload" )
+{
+	var container = process.argv[5];
+	var objectname  = process.argv[6];
+	console.log( "ObjectStorage Container: " + container );
+	console.log( "ObjectStorage Filename:  " + objectname );
+
+	console.log( "Read file: " + "files/" + objectname );
+	var buffer = fs.readFileSync( "files/" + objectname, { "flag": "r" } );
+	console.log( "File size: " + buffer.length );
+
+	var os = new ObjectStore(userid, password, projectId, container, region);
+	os.uploadFile(objectname, "application/binary", buffer, buffer.length)
+		.then(function(r) {
+			if ( r.statusCode != 200 )
+			{
+				console.error( "ERROR: Call returned " + r.statusCode + " : " + r.statusMessage)
+			}
+			else
+			{
+			}
+
+			// console.log( r );
+	    });;
 }
 
 /*
