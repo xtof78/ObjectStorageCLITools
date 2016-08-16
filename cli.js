@@ -20,7 +20,9 @@ var ObjectStore = require('./lib/ObjectStorage');
 var fsextra = require("fs-extra");
 var fs = require("fs");
 var localdir = __dirname;
-// var uuid = require('node-uuid').v4();
+var Promise = require('bluebird');
+
+Promise.promisifyAll(fs);
 
 var mode;
 var filename;
@@ -28,6 +30,8 @@ var filepath;
 var objectname; 
 var filefqn;
 var container;
+
+var filelist = [];
 
 console.log( "Retrieving parameters 'Region,ProjectId,[Container,UserId,Password]'" );
 
@@ -111,7 +115,7 @@ if ( command === "listcontainers" )
 		.then(function(r) {
 			if ( r.statusCode != 200 )
 			{
-				console.error( "ERROR: Call returned " + r.statusCode + " : " + r.statusMessage)
+				console.error( "ERROR: Call returned ", r );
 			}
 			else
 			{
@@ -119,62 +123,102 @@ if ( command === "listcontainers" )
 
 			// console.log( r );
 	    });;
+} else if ( command === "uploaddir" )
+{
+	var container = process.argv[5];
+	var dirname  = process.argv[6];
+   var stat = null;
+   var os = new ObjectStore(userid, password, projectId, container, region);
+
+	console.log( "ObjectStorage Container: " + container );
+
+   filelist = [];
+
+   doReadDir( "files/", dirname );
+   
+   console.log( "FileList ", filelist)
+
+   Promise.each( filelist, function (f, index, length) {
+
+      return new Promise( function(resolve, reject) {
+         console.log( "Emitting file: " + f + "/ " + index + " of " + length );
+      
+         var buffer;
+         if ( f.indexOf( ".empty" ) >= 0 )
+         {
+            buffer = null;
+
+            os.uploadFile(dirname + "/" + f, "application/binary", buffer, 0)
+            .then(function(r) {
+                  console.error( "ERROR: Call returned ", r );
+                  if ( ( r.statusCode != 200 ) && ( r.statusCode != 201 ) )
+                  {
+                     console.error( "ERROR: Call returned " + r.statusCode + " : " + r.statusMessage)
+                     reject(r.statusCode);
+                  }
+                  else
+                  {
+                     console.error( "OK: Sent correctly" );
+                     resolve(r.statusCode);
+                  }
+            });
+         }
+         else
+         {
+            buffer = fs.readFileSync( f, { "flag": "r" } );
+            console.log( "File size: " + buffer.length );
+
+            os.uploadFile(dirname + "/" + f, "application/binary", buffer, buffer.length)
+            .then(function(r) {
+                  console.error( "ERROR: Call returned ", r );
+                  if ( ( r.statusCode != 200 ) && ( r.statusCode != 201 ) )
+                  {
+                     console.error( "ERROR: Call returned " + r.statusCode + " : " + r.statusMessage)
+                     reject(r.statusCode);
+                  }
+                  else
+                  {
+                     console.error( "OK: Sent correctly" );
+                     resolve(r.statusCode);
+                  }
+            });
+         }
+      }); 
+   }) /*
+   .catch(e)
+   {
+      console.error( "ERROR: Exception during sending of directory: " + e );
+   }*/ ; 
 }
 
-/*
-appdefdir = process.argv[2];
-			// Check mode
-         	if ((msg.mode) && (msg.mode.trim() !== "")) {
-         		mode = msg.mode;
-         	} else {
-         		if (node.mode) {
-         			mode = node.mode;
-         		} else {
-         			mode = "1";
-         		}
-         	}
+function doReadDir( root, dirname )
+{
+   // List the files
+   var files = fs.readdirSync( root + dirname );
+   var f;
 
-         	// Check ObjectName 
-         	if ((msg.objectname) && (msg.objectname.trim() !== "")) {
-         		objectname = msg.objectname;
-         	} else {
-     			objectname = node.objectname;
-         	}
+   console.log( "Directory to send:       " + root + dirname );
+   filelist.push( root + dirname + "/.empty" );
 
-         	// Check Filename
-         	if ((msg.filename) && (msg.filename.trim() !== "")) {
-         		filename = msg.filename;
-         	} else {
-     			filename = node.filename;
-         	}
-
-			// Check filepath
-         	if ((msg.filepath) && (msg.filepath.trim() !== "")) {
-         		filepath = msg.filepath;
-         	} else {
-         		if (node.filepath) {
-         			filepath = node.filepath;
-         		} else {
-         			filepath = localdir;
-         		}
-         	}
-
-         	// Set FQN for this file
-     		filefqn = filepath + filename;
-         	
- 			// Check container
-         	if ((msg.container) && (msg.container.trim() !== "")) {
-         		container = msg.container;
-         	} else {
-         		if (node.container) {
-         			container = node.container;
-         		} else {
-         			container = "Pictures";
-         		}
-         	}
-                
-            console.log('ObjectStorage Get ' + node.osconfig.userId +","+ node.osconfig.password +","+ node.osconfig.tendantId+","+ container+","+node.osconfig.region );
-
-	// Enable the Object Storage Service Call
-	var os = new ObjectStore(node.osconfig.userId, node.osconfig.password, node.osconfig.tendantId, container, node.osconfig.region);
-*/
+   for ( f in files )
+   {
+      stat = fs.statSync( root + dirname + "/" + files[f] );
+      if ( stat.isDirectory() )
+      {
+         console.log( "Send dir: files/" + dirname + "/" + files[f] );
+         doReadDir( root, dirname + "/" + files[f] );
+      }
+      else
+      {
+         if ( files[f] === ".DS_Store" )
+         {
+            console.log( "Ignoring file: " + root + dirname + "/" + files[f] );
+         }
+         else
+         {
+            console.log( "Send file: " + root + dirname + "/" + files[f] );
+            filelist.push( root + dirname + "/" + files[f] );
+         }
+      }
+   }
+}
